@@ -85,42 +85,36 @@ class YamlPage(object):
 
 class YamlPages(object):
     """
-    Reads, parses and maintains a collection of files
-    that have a YAML header, polling them for changes.
+    Parses and maintains a collection of files that have a YAML header,
+    polling them for changes.  This is based on Flask-FlatPages_.
+    This class does not depend on a global Flask app configuration and
+    can thus be used multiple times in a single application.
 
-    Initialization parameters:
+    .. _Flask-FlatPages: http://http://packages.python.org/Flask-FlatPages/
 
-        root:
-            Folder in the filesystem to search for files.
+    :param root: Folder in the filesystem to search for files.
 
-        extensions:
-            A set of file extensions to include in the search
-            with the dot prefix, such as: set(['.html', '.xml']).
+    :param extensions: A set of file extensions to include in the search
+        with the dot prefix, such as: ``set(['.html', '.xml'])``.
 
-        prunning:
-            Delete cached files that are no longer in the filesystem
-            on each reload.  The default is True.
+    :param prunning: Delete cached files that are no longer in the filesystem.
 
-        verbose:
-            Print cache management information which may aid on debugging.
-            The default is False.
+    :param verbose: Print cache management information.
 
-        renderer:
-            A function that will be called to process each page
-            body when accessed.  The result is cached until the file changes.
-            The default is a identity function.
+    :param renderer: A function that will be called to process each page
+        body when accessed.  The result is cached until the file changes.
+        The default is a identity function.
 
-        excludes:
-            A tuple of *starting* path strings to ignore in the search.
-            Use posix path separators, relative from the root.
+    :param excludes: A tuple of `starting` path strings to ignore
+        in the search.  Use posix path separators, relative from the root.
 
-            Examples:
-                '.'       ignores .hg/, .git/, .hgignore...
-                'static/' ignores the 'static' FOLDER at the root.
-                'static'  ignores the 'static' FILE at the root.
+        Examples::
 
-        encoding:
-            Defaults to: 'utf8'.
+            '.'       ignores .hg/, .git/, .hgignore...
+            'static/' ignores the 'static' FOLDER at the root.
+            'static'  ignores the 'static' FILE at the root.
+
+    :param encoding: Defaults to: `'utf8'`.
     """
     def __init__(self,
                  root,
@@ -156,40 +150,21 @@ class YamlPages(object):
                 filepath = op.join(root, filename)
                 relpath = op.relpath(filepath, self.root)
 
-                route, extension = op.splitext(relpath)
-                route = route.replace(os.sep, posixpath.sep)
+                path, extension = op.splitext(relpath)
+                path = path.replace(os.sep, posixpath.sep)
 
-                if not route.startswith(self.excludes):
+                if not path.startswith(self.excludes):
                     if extension in self.extensions:
-                        self.load_page(route, filepath)
+                        self._load_page(path, filepath)
 
         self._first_run = False
 
-    def load_page(self, route, filepath):
-        """
-        Load the page that corresponds to 'filepath'.
-
-        If it is in the cache and the file hasn't changed, this does nothing.
-        Otherwise, it reads the file and creates a page at 'route'.
-        """
-        mtime = op.getmtime(filepath)
-        cached = self._file_cache.get(filepath)
-
-        if cached and cached[1] == mtime:
-            return
-
-        if self.verbose and not self._first_run:
-            print " * Loading:", filepath
-
-        meta, body = self.parse_page(filepath)
-        page = YamlPage(route, meta, body, self.renderer)
-
-        self._file_cache[filepath] = page, mtime
-        self._pages[route] = page
-
     def parse_page(self, filepath):
         """
-        Parse and return the meta, body parts of a given file.
+        Parse and return the meta and body parts of a given YAML file.
+        This is the method to override to implement custom parsing.
+
+        :param filepath: path to the file to parse.
         """
         with open(filepath) as fd:
             content = fd.read().decode(self.encoding)
@@ -213,6 +188,22 @@ class YamlPages(object):
                     print " * Prunning:", filepath
                 del self._file_cache[filepath]
 
+    def _load_page(self, path, filepath):
+        mtime = op.getmtime(filepath)
+        cached = self._file_cache.get(filepath)
+
+        if cached and cached[1] == mtime:
+            return
+
+        if self.verbose and not self._first_run:
+            print " * Loading:", filepath
+
+        meta, body = self.parse_page(filepath)
+        page = YamlPage(path, meta, body, self.renderer)
+
+        self._file_cache[filepath] = page, mtime
+        self._pages[path] = page
+
     def __iter__(self):
         """
         Iterate on all pages.
@@ -222,15 +213,16 @@ class YamlPages(object):
 
         return self._pages.itervalues()
 
-    def __getitem__(self, route):
+    def __getitem__(self, path):
         """
-        Return the page that lives at a specific route.
+        Return the specific page corresponding to `path` or `None`
+        if it doesn't exist.
         """
         if self._first_run:
             self.load_pages()
 
         try:
-            return self._pages[route]
+            return self._pages[path]
         except KeyError:
             return None
 
