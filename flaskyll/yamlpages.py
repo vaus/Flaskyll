@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-A reusable version of Flask-FlatPages that does not
-depend on Flask's 'app.config' or Markdown.
+    flaskyll.yamlpages
+    ~~~~~~~~~~~~~~~~~~
 
-Copyright (c) 2010 by Simon Sapin.
-Copyright (c) 2012 by vaus.
-License: BSD, see LICENSE for more details.
+    A reusable version of Flask-FlatPages that does not
+    depend on Flask's `app.config` or Markdown.
+
+    :copyright: (c) 2010 by Simon Sapin.
+    :copyright: (c) 2012 by vaus.
+    :license: BSD, see LICENSE for more details.
 """
 
 from werkzeug import cached_property
@@ -23,25 +26,18 @@ except ImportError:
     from yaml import Loader
 
 
-class YamlPage(object):
+class LazyYamlPage(object):
     """
-    Represents a page that has a YAML header.
-    Initialization parameters:
+    Represents a page that has a YAML header. The page :attr:`meta`
+    and :attr:`body` are processed on access and then cached.
 
-        path:
-            Route in the web server where this page is located.
+    :param path: Route in the web server where this page is located.
 
-        meta:
-            YAML header, to be processed/cached.
-            The processed result will be cached in 'page.meta'.
+    :param meta: YAML header, unprocessed.
 
-        body:
-            Contents of this page, to be processed/cached.
-            The processed result will be cached in 'page.body'.
+    :param body: Contents of this page, unprocessed.
 
-        renderer:
-            A function that will be called to process the page
-            body when accessed.
+    :param renderer: The function to call to process :attr:`body`.
     """
     def __init__(self, path, meta, body, renderer):
         self.path = path
@@ -53,7 +49,8 @@ class YamlPage(object):
     @cached_property
     def meta(self):
         """
-        A dict of metadata parsed as YAML from the header of the page.
+        Returns the dict of metadata parsed as YAML from the header
+        of the page.
         """
         meta = yaml.load(self._meta, Loader = Loader) or {}
 
@@ -63,7 +60,8 @@ class YamlPage(object):
     @cached_property
     def body(self):
         """
-        The content of the page, as rendered through self.renderer.
+        Returns the content of the page, as rendered through
+        `self.renderer`.
         """
         return self.renderer(self._body)
 
@@ -71,8 +69,8 @@ class YamlPage(object):
         """
         Shortcut for accessing metadata.
 
-        page['title'] or, in a template, {{ page.title }} are
-        equivalent to page.meta['title'].
+        ``page['title']`` or, in a template, ``{{ page.title }}`` are
+        equivalent to ``page.meta['title']``.
         """
         return self.meta[key]
 
@@ -111,8 +109,7 @@ class YamlPages(object):
         Examples::
 
             '.'       ignores .hg/, .git/, .hgignore...
-            'static/' ignores the 'static' FOLDER at the root.
-            'static'  ignores the 'static' FILE at the root.
+            'static/' ignores the 'static' folder at the root.
 
     :param encoding: Defaults to: `'utf8'`.
     """
@@ -145,6 +142,7 @@ class YamlPages(object):
         if self.prunning:
             self.prune_cache()
 
+        self._pages.clear()
         for root, dirs, files in os.walk(self.root):
             for filename in files:
                 filepath = op.join(root, filename)
@@ -185,7 +183,7 @@ class YamlPages(object):
         for filepath in self._file_cache.keys():
             if not op.isfile(filepath):
                 if self.verbose:
-                    print " * Prunning:", filepath
+                    print " * Prunning: ", filepath
                 del self._file_cache[filepath]
 
     def _load_page(self, path, filepath):
@@ -193,15 +191,15 @@ class YamlPages(object):
         cached = self._file_cache.get(filepath)
 
         if cached and cached[1] == mtime:
-            return
+            page = cached[0]
+        else:
+            if self.verbose and not self._first_run:
+                print " * Loading:", filepath
 
-        if self.verbose and not self._first_run:
-            print " * Loading:", filepath
+            meta, body = self.parse_page(filepath)
+            page = LazyYamlPage(path, meta, body, self.renderer)
+            self._file_cache[filepath] = page, mtime
 
-        meta, body = self.parse_page(filepath)
-        page = YamlPage(path, meta, body, self.renderer)
-
-        self._file_cache[filepath] = page, mtime
         self._pages[path] = page
 
     def __iter__(self):
@@ -221,8 +219,5 @@ class YamlPages(object):
         if self._first_run:
             self.load_pages()
 
-        try:
-            return self._pages[path]
-        except KeyError:
-            return None
+        return self._pages.get(path)
 
